@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 不顯示傳統 ActionBar；畫面控制項完全由 Compose 繪製。 -->
+    <style name="Theme.MyApplication2" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

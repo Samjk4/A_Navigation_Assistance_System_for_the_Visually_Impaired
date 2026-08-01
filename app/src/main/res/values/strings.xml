@@ -1,0 +1,4 @@
+<resources>
+    <!-- 顯示於桌面、系統設定與 Activity 標題的 App 名稱。 -->
+    <string name="app_name">視覺導航助手</string>
+</resources>

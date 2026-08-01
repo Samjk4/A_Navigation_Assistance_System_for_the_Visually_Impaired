@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 標準 USB Video Class（class 14）裝置，例如一般 UVC 網路攝影機。 -->
+    <usb-device class="14" />
+    <!-- 複合型／特殊類別（class 239）裝置；有些 UVC 相機會將視訊介面置於此類別。 -->
+    <usb-device class="239" />
+    <!-- 已知相容相機的特定 VID/PID，作為類別宣告不完整時的補充匹配。 -->
+    <usb-device vendor-id="3034" product-id="22533" />
+</resources>
