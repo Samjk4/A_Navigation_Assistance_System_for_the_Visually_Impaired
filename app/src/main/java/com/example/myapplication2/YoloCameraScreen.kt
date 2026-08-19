@@ -36,6 +36,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -620,7 +623,8 @@ fun YoloCameraScreen() {
             SettingsEntryButton(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .navigationBarsPadding()
+                    .padding(end = 20.dp, bottom = 20.dp),
                 onClick = { showSettings = true }
             )
 
@@ -1153,18 +1157,27 @@ private fun SettingsEntryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
-        shape = RoundedCornerShape(24.dp),
+        modifier = modifier.heightIn(min = 52.dp),
+        shape = RoundedCornerShape(26.dp),
+        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.45f)),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            contentColor = MaterialTheme.colorScheme.onSurface
+            containerColor = CameraPrimary,
+            contentColor = Color.White
         ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
+        elevation = ButtonDefaults.buttonElevation(
+            defaultElevation = 10.dp,
+            pressedElevation = 6.dp
+        ),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            horizontal = 22.dp,
+            vertical = 12.dp
+        )
     ) {
         Text(
-            text = "設定",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium
+            text = "⚙  設定",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp
         )
     }
 }
