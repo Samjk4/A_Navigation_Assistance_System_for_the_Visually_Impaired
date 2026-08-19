@@ -53,8 +53,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -108,7 +106,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.Executors
 
 /**
- * 主畫面：顯示 USB 攝影機畫面、物件方框，以及曝光和語音等控制項。
+ * 主畫面：顯示 USB 攝影機畫面與物件方框；曝光、語音等選項在獨立設定頁。
  *
  * 只用外接 USB 攝影機。較花時間的看圖工作放在背景做，完成後再更新畫面。
  */
@@ -132,6 +130,7 @@ fun YoloCameraScreen() {
     }
     var uvcExposureLevel by remember { mutableStateOf(0) } // -2..2
     var showDebugInfo by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
 
     var cameraStatus by remember { mutableStateOf("等待外接 UVC 攝像頭…") }
     var hasCameraPermission by remember { mutableStateOf(false) }
@@ -569,43 +568,46 @@ fun YoloCameraScreen() {
                     detectionCount = detectionsState.value.size,
                     cameraStatus = cameraStatus,
                     activeCameraLabel = activeCameraLabel,
-                    uvcStatus = uvcStatus
+                    uvcStatus = uvcStatus,
+                    onSettingsClick = { showSettings = true }
                 )
             }
 
-            ControlPanel(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                uvcExposureLevel = uvcExposureLevel,
-                trafficMode = trafficModeState.value,
-                voiceEnabled = voiceEnabled,
-                voiceIntervalMs = voiceIntervalMsState.value,
-                showDebugInfo = showDebugInfo,
-                usbDebugInfo = usbDebugInfo,
-                onExposureDecrease = {
-                    uvcExposureLevel = (uvcExposureLevel - 1).coerceAtLeast(-2)
-                    applyExposureState.value?.invoke(uvcExposureLevel)
-                },
-                onExposureIncrease = {
-                    uvcExposureLevel = (uvcExposureLevel + 1).coerceAtMost(2)
-                    applyExposureState.value?.invoke(uvcExposureLevel)
-                },
-                onTrafficModeChange = { mode ->
-                    setTrafficMode(trafficModeState, prefs, mode)
-                },
-                onVoiceToggle = { enabled ->
-                    voiceEnabled = enabled
-                    prefs.edit().putBoolean(PREF_KEY_VOICE_ENABLED, voiceEnabled).apply()
-                    if (!voiceEnabled) {
-                        ttsRef.value?.stop()
-                    }
-                    voiceDebounce.reset()
-                },
-                onVoiceIntervalChange = { interval ->
-                    setVoiceIntervalMs(voiceIntervalMsState, prefs, interval)
-                    voiceDebounce.reset()
-                },
-                onDebugToggle = { showDebugInfo = !showDebugInfo }
-            )
+            if (showSettings) {
+                SettingsScreen(
+                    uvcExposureLevel = uvcExposureLevel,
+                    trafficMode = trafficModeState.value,
+                    voiceEnabled = voiceEnabled,
+                    voiceIntervalMs = voiceIntervalMsState.value,
+                    showDebugInfo = showDebugInfo,
+                    usbDebugInfo = usbDebugInfo,
+                    onExposureDecrease = {
+                        uvcExposureLevel = (uvcExposureLevel - 1).coerceAtLeast(-2)
+                        applyExposureState.value?.invoke(uvcExposureLevel)
+                    },
+                    onExposureIncrease = {
+                        uvcExposureLevel = (uvcExposureLevel + 1).coerceAtMost(2)
+                        applyExposureState.value?.invoke(uvcExposureLevel)
+                    },
+                    onTrafficModeChange = { mode ->
+                        setTrafficMode(trafficModeState, prefs, mode)
+                    },
+                    onVoiceToggle = { enabled ->
+                        voiceEnabled = enabled
+                        prefs.edit().putBoolean(PREF_KEY_VOICE_ENABLED, voiceEnabled).apply()
+                        if (!voiceEnabled) {
+                            ttsRef.value?.stop()
+                        }
+                        voiceDebounce.reset()
+                    },
+                    onVoiceIntervalChange = { interval ->
+                        setVoiceIntervalMs(voiceIntervalMsState, prefs, interval)
+                        voiceDebounce.reset()
+                    },
+                    onDebugToggle = { showDebugInfo = !showDebugInfo },
+                    onClose = { showSettings = false }
+                )
+            }
         }
 
         LaunchedEffect(uvcPreferredActive) {
@@ -1017,7 +1019,8 @@ private fun StatusHeader(
     detectionCount: Int,
     cameraStatus: String,
     activeCameraLabel: String,
-    uvcStatus: String
+    uvcStatus: String,
+    onSettingsClick: () -> Unit
 ) {
     val statusColor = when {
         uvcConnected -> CameraSuccess
@@ -1045,7 +1048,8 @@ private fun StatusHeader(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
             ) {
                 Box(
                     modifier = Modifier
@@ -1068,16 +1072,23 @@ private fun StatusHeader(
                 }
             }
 
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color.White.copy(alpha = 0.12f)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "$detectionCount 個目標",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White
-                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color.White.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "$detectionCount 個目標",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White
+                    )
+                }
+
+                SettingsEntryButton(onClick = onSettingsClick)
             }
         }
 
@@ -1092,9 +1103,110 @@ private fun StatusHeader(
     }
 }
 
-/** 畫面下方的控制區，可調亮度、辨識速度、語音和除錯資訊。 */
+/** 主畫面右上角的設定入口按鈕。 */
 @Composable
-private fun ControlPanel(
+private fun SettingsEntryButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(36.dp),
+        shape = RoundedCornerShape(18.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White.copy(alpha = 0.18f),
+            contentColor = Color.White
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+    ) {
+        Text(
+            text = "設定",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+/** 獨立設定頁面，包含曝光、偵測模式、語音與除錯等選項。 */
+@Composable
+private fun SettingsScreen(
+    uvcExposureLevel: Int,
+    trafficMode: TrafficPerfMode,
+    voiceEnabled: Boolean,
+    voiceIntervalMs: Long,
+    showDebugInfo: Boolean,
+    usbDebugInfo: String,
+    onExposureDecrease: () -> Unit,
+    onExposureIncrease: () -> Unit,
+    onTrafficModeChange: (TrafficPerfMode) -> Unit,
+    onVoiceToggle: (Boolean) -> Unit,
+    onVoiceIntervalChange: (Long) -> Unit,
+    onDebugToggle: () -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 8.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Button(
+                    onClick = onClose,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = CameraPrimary
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+                ) {
+                    Text(
+                        text = "← 返回",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Text(
+                    text = "設定",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+            SettingsContent(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                uvcExposureLevel = uvcExposureLevel,
+                trafficMode = trafficMode,
+                voiceEnabled = voiceEnabled,
+                voiceIntervalMs = voiceIntervalMs,
+                showDebugInfo = showDebugInfo,
+                usbDebugInfo = usbDebugInfo,
+                onExposureDecrease = onExposureDecrease,
+                onExposureIncrease = onExposureIncrease,
+                onTrafficModeChange = onTrafficModeChange,
+                onVoiceToggle = onVoiceToggle,
+                onVoiceIntervalChange = onVoiceIntervalChange,
+                onDebugToggle = onDebugToggle
+            )
+        }
+    }
+}
+
+/** 設定頁內容：曝光、偵測模式、語音間隔與除錯資訊。 */
+@Composable
+private fun SettingsContent(
     modifier: Modifier = Modifier,
     uvcExposureLevel: Int,
     trafficMode: TrafficPerfMode,
@@ -1109,131 +1221,128 @@ private fun ControlPanel(
     onVoiceIntervalChange: (Long) -> Unit,
     onDebugToggle: () -> Unit
 ) {
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            SettingSection(title = "曝光調整") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SettingChip(text = "−", selected = false, onClick = onExposureDecrease)
+        SettingSection(title = "曝光調整") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingChip(text = "−", selected = false, onClick = onExposureDecrease)
+                SettingChip(
+                    text = "曝光 $uvcExposureLevel",
+                    selected = true,
+                    onClick = {},
+                    modifier = Modifier.weight(1f)
+                )
+                SettingChip(text = "+", selected = false, onClick = onExposureIncrease)
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+        SettingSection(title = "偵測模式") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TrafficPerfMode.entries.forEach { mode ->
                     SettingChip(
-                        text = "曝光 $uvcExposureLevel",
-                        selected = true,
-                        onClick = {},
+                        text = mode.label,
+                        selected = trafficMode == mode,
+                        onClick = { onTrafficModeChange(mode) },
                         modifier = Modifier.weight(1f)
                     )
-                    SettingChip(text = "+", selected = false, onClick = onExposureIncrease)
                 }
             }
+        }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
 
-            SettingSection(title = "偵測模式") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    TrafficPerfMode.entries.forEach { mode ->
-                        SettingChip(
-                            text = mode.label,
-                            selected = trafficMode == mode,
-                            onClick = { onTrafficModeChange(mode) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-
-            SettingSection(title = "語音提醒間隔") {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (voiceEnabled) "已開啟" else "已關閉",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Switch(
-                        checked = voiceEnabled,
-                        onCheckedChange = onVoiceToggle,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = CameraPrimary,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = MaterialTheme.colorScheme.outline
-                        )
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2000L to "2 秒", 3000L to "3 秒", 5000L to "5 秒").forEach { (ms, label) ->
-                        SettingChip(
-                            text = label,
-                            selected = voiceIntervalMs == ms,
-                            onClick = { onVoiceIntervalChange(ms) },
-                            modifier = Modifier.weight(1f),
-                            enabled = voiceEnabled
-                        )
-                    }
-                }
-            }
-
+        SettingSection(title = "語音提醒") {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onDebugToggle)
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "偵測項目：人 · 車 · 障礙物 · 交通號誌",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CameraOnSurfaceMuted,
-                    modifier = Modifier.weight(1f)
+                    text = if (voiceEnabled) "已開啟" else "已關閉",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = if (showDebugInfo) "收起 ▲" else "詳細 ▼",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CameraPrimary
+                Switch(
+                    checked = voiceEnabled,
+                    onCheckedChange = onVoiceToggle,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = CameraPrimary,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.outline
+                    )
                 )
             }
-
-            if (showDebugInfo) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                ) {
-                    Text(
-                        text = usbDebugInfo,
-                        modifier = Modifier.padding(10.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = CameraOnSurfaceMuted
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(2000L to "2 秒", 3000L to "3 秒", 5000L to "5 秒").forEach { (ms, label) ->
+                    SettingChip(
+                        text = label,
+                        selected = voiceIntervalMs == ms,
+                        onClick = { onVoiceIntervalChange(ms) },
+                        modifier = Modifier.weight(1f),
+                        enabled = voiceEnabled
                     )
                 }
+            }
+        }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+
+        SettingSection(title = "偵測項目") {
+            Text(
+                text = "人 · 車 · 障礙物 · 交通號誌",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onDebugToggle)
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "USB 除錯資訊",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = if (showDebugInfo) "收起 ▲" else "展開 ▼",
+                style = MaterialTheme.typography.labelSmall,
+                color = CameraPrimary
+            )
+        }
+
+        if (showDebugInfo) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            ) {
+                Text(
+                    text = usbDebugInfo,
+                    modifier = Modifier.padding(10.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CameraOnSurfaceMuted
+                )
             }
         }
     }
