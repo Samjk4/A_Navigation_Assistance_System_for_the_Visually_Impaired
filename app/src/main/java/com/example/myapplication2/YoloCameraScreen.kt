@@ -1,6 +1,7 @@
 package com.example.myapplication2
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.content.Context
@@ -160,7 +161,14 @@ fun YoloCameraScreen() {
         }
     )
     LaunchedEffect(Unit) {
-        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        hasCameraPermission = granted
+        if (!granted) {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val uvcTextureViewRef = remember { mutableStateOf<TextureView?>(null) }
@@ -219,8 +227,8 @@ fun YoloCameraScreen() {
             }
         }
 
-        // 要等預覽區準備好，USB 攝影機才有地方可以把影像畫出來。
-        DisposableEffect(uvcTextureViewRef.value) {
+        // USB 監聽與授權只用一次生命週期；不要綁 TextureView，否則預覽面就緒時會整段重跑並重複跳授權窗。
+        DisposableEffect(Unit) {
             val frameCounter = AtomicInteger(0)
             val uvcAnalyzing = AtomicBoolean(false)
             val trafficTracks = mutableListOf<TrafficTrack>()
@@ -228,7 +236,12 @@ fun YoloCameraScreen() {
             val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
             val permissionAction = "${context.packageName}.USB_PERMISSION_UVC_DIRECT"
             val permissionReqCode = AtomicInteger(4000)
+            val permissionRequestInFlight = AtomicBoolean(false)
+            val permissionDeniedDevices = mutableSetOf<String>()
             val mainHandler = Handler(Looper.getMainLooper())
+
+            fun deviceKey(device: UsbDevice): String =
+                "${device.deviceId}:${device.vendorId}:${device.productId}"
             val usbMonitor = USBMonitor(
                 context,
                 object : USBMonitor.OnDeviceConnectListener {
@@ -363,7 +376,13 @@ fun YoloCameraScreen() {
                 if (!hasCameraPermission) {
                     pendingStartAfterCameraGrant = true
                     uvcStatus = "請先允許相機權限，允許後將自動開啟外接鏡頭"
-                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.CAMERA
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
                     return
                 }
                 if (target == null) {
@@ -379,18 +398,33 @@ fun YoloCameraScreen() {
                     "USB 裝置：${allDevices.size} / firstVidPid=${first.vendorId}:${first.productId} class=${first.deviceClass}"
                 }
                 if (usbManager.hasPermission(target)) {
+                    permissionRequestInFlight.set(false)
                     uvcStatus = "USB 權限已存在，嘗試連線…"
                     startUvc(target)
-                } else {
-                    uvcStatus = "已發送 USB 授權請求（僅本次）"
-                    usbManager.requestPermission(target, buildPermissionIntent())
+                    return
                 }
+                val key = deviceKey(target)
+                if (key in permissionDeniedDevices) {
+                    uvcStatus = "USB 權限未通過（不重試）"
+                    return
+                }
+                if (permissionRequestInFlight.get()) {
+                    uvcStatus = "等待 USB 授權（請在系統彈窗點允許）"
+                    return
+                }
+                permissionRequestInFlight.set(true)
+                uvcStatus = "已發送 USB 授權請求（僅本次）"
+                usbManager.requestPermission(target, buildPermissionIntent())
             }
             triggerUsbStartState.value = {
                 val target = pendingUvcDeviceState.value
                     ?: usbManager.deviceList.values.firstOrNull { isUvcDevice(it) }
                     ?: usbManager.deviceList.values.firstOrNull()
-                requestUsbPermissionOnce(target)
+                if (target != null && usbManager.hasPermission(target)) {
+                    startUvc(target)
+                } else {
+                    requestUsbPermissionOnce(target)
+                }
             }
 
             val receiver = object : BroadcastReceiver() {
@@ -404,6 +438,10 @@ fun YoloCameraScreen() {
                                 intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                             }
                             val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                            permissionRequestInFlight.set(false)
+                            if (!granted && device != null) {
+                                permissionDeniedDevices.add(deviceKey(device))
+                            }
                             val chooseGrantedDevice = {
                                 val fromIntent = device
                                 if (fromIntent != null && usbManager.hasPermission(fromIntent)) {
@@ -451,9 +489,14 @@ fun YoloCameraScreen() {
                             }
                             if (device != null && isUvcDevice(device)) {
                                 pendingUvcDeviceState.value = device
-                                uvcStatus = "偵測到 UVC 裝置，正在請求 USB 授權…"
                                 usbDebugInfo = "attach vid=${device.vendorId} pid=${device.productId} class=${device.deviceClass} ifCount=${device.interfaceCount}"
-                                requestUsbPermissionOnce(device)
+                                if (usbManager.hasPermission(device)) {
+                                    uvcStatus = "偵測到 UVC 裝置，正在連線…"
+                                    startUvc(device)
+                                } else if (!permissionRequestInFlight.get()) {
+                                    uvcStatus = "偵測到 UVC 裝置，正在請求 USB 授權…"
+                                    requestUsbPermissionOnce(device)
+                                }
                             }
                         }
                         UsbManager.ACTION_USB_DEVICE_DETACHED -> {
@@ -464,6 +507,8 @@ fun YoloCameraScreen() {
                                 intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                             }
                             if (device != null && isUvcDevice(device)) {
+                                permissionRequestInFlight.set(false)
+                                permissionDeniedDevices.remove(deviceKey(device))
                                 pendingUvcDeviceState.value = null
                                 stopUvc()
                             }
@@ -568,10 +613,16 @@ fun YoloCameraScreen() {
                     detectionCount = detectionsState.value.size,
                     cameraStatus = cameraStatus,
                     activeCameraLabel = activeCameraLabel,
-                    uvcStatus = uvcStatus,
-                    onSettingsClick = { showSettings = true }
+                    uvcStatus = uvcStatus
                 )
             }
+
+            SettingsEntryButton(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                onClick = { showSettings = true }
+            )
 
             if (showSettings) {
                 SettingsScreen(
@@ -1019,8 +1070,7 @@ private fun StatusHeader(
     detectionCount: Int,
     cameraStatus: String,
     activeCameraLabel: String,
-    uvcStatus: String,
-    onSettingsClick: () -> Unit
+    uvcStatus: String
 ) {
     val statusColor = when {
         uvcConnected -> CameraSuccess
@@ -1048,8 +1098,7 @@ private fun StatusHeader(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Box(
                     modifier = Modifier
@@ -1072,23 +1121,16 @@ private fun StatusHeader(
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White.copy(alpha = 0.12f)
             ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.12f)
-                ) {
-                    Text(
-                        text = "$detectionCount 個目標",
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White
-                    )
-                }
-
-                SettingsEntryButton(onClick = onSettingsClick)
+                Text(
+                    text = "$detectionCount 個目標",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White
+                )
             }
         }
 
@@ -1103,7 +1145,7 @@ private fun StatusHeader(
     }
 }
 
-/** 主畫面右上角的設定入口按鈕。 */
+/** 主畫面右下角的設定入口按鈕。 */
 @Composable
 private fun SettingsEntryButton(
     modifier: Modifier = Modifier,
@@ -1111,18 +1153,17 @@ private fun SettingsEntryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.height(36.dp),
-        shape = RoundedCornerShape(18.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.18f),
-            contentColor = Color.White
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         ),
-        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
     ) {
         Text(
             text = "設定",
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Medium
         )
     }
